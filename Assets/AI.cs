@@ -71,7 +71,6 @@ public class AI : MonoBehaviour
         if (path.IsReach(transform))
         {
             path.NextWaypoint();
-            print(path.waypoint);
         }
     }
 
