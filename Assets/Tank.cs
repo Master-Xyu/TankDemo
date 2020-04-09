@@ -4,9 +4,14 @@ using UnityEngine;
 
 public class Tank : MonoBehaviour
 {
-
+    public enum CtrlType
+    {
+        none,
+        player,
+        computer
+    }
     public Transform turret;
-    private float turretRotSpeed = 0.5f;
+    private float turretRotSpeed = 0.8f;
     private float turretRotTarget = 0;
 
     public Transform gun;
@@ -28,6 +33,18 @@ public class Tank : MonoBehaviour
 
     public AudioSource motorAudioSource;
     public AudioClip motorClip;
+
+    public GameObject bullet;
+    public float lastShootTime = 0;
+    private float shootInterval = 0.5f;
+
+    public CtrlType ctrlType = CtrlType.player;
+
+    public float maxHp = 100;
+    public float hp = 100;
+
+    public GameObject destroyFlameEffect;
+    public GameObject destroySmokeEffect;
     // Start is called before the first frame update
     void Start()
     {
@@ -114,6 +131,10 @@ public class Tank : MonoBehaviour
 
     public void PlayerCtrl()
     {
+        if(ctrlType != CtrlType.player)
+        {
+            return;
+        }
         maxMotorTorque = 300f;
         maxSteeringAngle = 25f;
         motor = -maxMotorTorque * Input.GetAxis("Vertical");
@@ -132,6 +153,11 @@ public class Tank : MonoBehaviour
             else if (axleInfo.leftWheel.rpm < -5 && motor > 0)
                 brakeTorque = maxBrakeTorque;
             continue;
+        }
+
+        if (Input.GetMouseButton(0))
+        {
+            Shoot();
         }
     }
 
@@ -169,7 +195,6 @@ public class Tank : MonoBehaviour
 
     void MotorSound()
     {
-        print(motor);
         if ((motor>1 || motor < -1) && !motorAudioSource.isPlaying)
         {
             motorAudioSource.loop = true;
@@ -180,5 +205,17 @@ public class Tank : MonoBehaviour
         {
             motorAudioSource.Pause();
         }
+    }
+
+    public void Shoot()
+    {
+        if (Time.time - lastShootTime < shootInterval)
+            return;
+
+        if (bullet == null)
+            return;
+        Vector3 pos = gun.position + gun.forward * 5;
+        Instantiate(bullet, pos, gun.rotation);
+        lastShootTime = Time.time;
     }
 }
