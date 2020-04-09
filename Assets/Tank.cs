@@ -4,9 +4,14 @@ using UnityEngine;
 
 public class Tank : MonoBehaviour
 {
-
+    public enum CtrlType
+    {
+        none,
+        player,
+        computer
+    }
     public Transform turret;
-    private float turretRotSpeed = 0.5f;
+    private float turretRotSpeed = 0.8f;
     private float turretRotTarget = 0;
 
     public Transform gun;
@@ -24,10 +29,31 @@ public class Tank : MonoBehaviour
     public float maxBrakeTorque;
 
     private float steering = 0;
-    public float maxSteeringAngle = 5f;
+    public float maxSteeringAngle;
 
     public AudioSource motorAudioSource;
     public AudioClip motorClip;
+
+    public GameObject bullet;
+    public float lastShootTime = 0;
+    private float shootInterval = 0.5f;
+
+    public CtrlType ctrlType = CtrlType.player;
+
+    public float maxHp = 100;
+    public float hp = 100;
+
+    public GameObject destroyFlameEffect;
+    public GameObject destroySmokeEffect;
+
+    private AI ai;
+
+    public AudioSource shootAudioSource;
+    public AudioClip shootClip;
+
+    public Texture2D killUI;
+    private float killUIStartTime = float.MinValue;
+
     // Start is called before the first frame update
     void Start()
     {
@@ -37,12 +63,23 @@ public class Tank : MonoBehaviour
         tracks = transform.Find("tracks");
         motorAudioSource = gameObject.AddComponent<AudioSource>();
         motorAudioSource.spatialBlend = 1;
+
+        shootAudioSource = gameObject.AddComponent<AudioSource>();
+        shootAudioSource.spatialBlend = 1;
+
+        if(ctrlType == CtrlType.computer)
+        {
+            ai = gameObject.AddComponent<AI>();
+            ai.tank = this;
+        }
     }
 
     // Update is called once per frame
     void Update()
     {
         PlayerCtrl();
+        ComputerCtrl();
+        NoneCtrl();
         foreach (AxleInfo axleInfo in axleInfos)
         {
             if (axleInfo.steering)
@@ -114,16 +151,17 @@ public class Tank : MonoBehaviour
 
     public void PlayerCtrl()
     {
-        maxMotorTorque = 300f;
-        maxSteeringAngle = 25f;
-        motor = -maxMotorTorque * Input.GetAxis("Vertical");
+        if(ctrlType != CtrlType.player)
+        {
+            return;
+        }
+        motor = maxMotorTorque * Input.GetAxis("Vertical");
         steering = maxSteeringAngle * Input.GetAxis("Horizontal");
 
         turretRollTarget = Camera.main.transform.eulerAngles.x;
         turretRotTarget = Camera.main.transform.eulerAngles.y;
 
         brakeTorque = 0;
-        maxBrakeTorque = 400f;
 
         foreach(AxleInfo axleInfo in axleInfos)
         {
@@ -132,6 +170,11 @@ public class Tank : MonoBehaviour
             else if (axleInfo.leftWheel.rpm < -5 && motor > 0)
                 brakeTorque = maxBrakeTorque;
             continue;
+        }
+
+        if (Input.GetMouseButton(0))
+        {
+            Shoot();
         }
     }
 
@@ -169,7 +212,6 @@ public class Tank : MonoBehaviour
 
     void MotorSound()
     {
-        print(motor);
         if ((motor>1 || motor < -1) && !motorAudioSource.isPlaying)
         {
             motorAudioSource.loop = true;
@@ -180,5 +222,101 @@ public class Tank : MonoBehaviour
         {
             motorAudioSource.Pause();
         }
+    }
+
+    public void Shoot()
+    {
+        if (Time.time - lastShootTime < shootInterval)
+            return;
+
+        if (bullet == null)
+            return;
+        Vector3 pos = gun.position + gun.forward * 5;
+        GameObject bulletObj = (GameObject)Instantiate(bullet, pos, gun.rotation);
+        Bullet bulletCmp = bulletObj.GetComponent<Bullet>();
+        if(bulletCmp != null)
+        {
+            bulletCmp.attackTank = this.gameObject;
+        }
+        lastShootTime = Time.time;
+        shootAudioSource.PlayOneShot(shootClip);
+    }
+
+    public void BeAttacked(float att, GameObject attackTank)
+    {
+        if(hp <= 0)
+        {
+            return;
+        }
+        if(hp > 0)
+        {
+            hp -= att;
+            if(ai != null)
+            {
+                ai.OnAttacked(attackTank);
+            }
+        }
+        if(hp <= 0)
+        {
+            GameObject destroyFlameObj = (GameObject)Instantiate(destroyFlameEffect);
+            GameObject destroySmokeObj = (GameObject)Instantiate(destroySmokeEffect);
+            destroyFlameObj.transform.SetParent(transform, false);
+            destroySmokeObj.transform.SetParent(transform, false);
+            destroyFlameObj.transform.localPosition = Vector3.zero;
+            destroySmokeObj.transform.localPosition = Vector3.zero;
+            ctrlType = CtrlType.none;
+
+            if(attackTank != null)
+            {
+                Tank tankCmp = attackTank.GetComponent<Tank>();
+                if (tankCmp != null && tankCmp.ctrlType == CtrlType.player)
+                    tankCmp.StartDrawKill();
+            }
+        }
+    }
+
+    public void StartDrawKill()
+    {
+        killUIStartTime = Time.time;
+    }
+
+    private void DrawKillUI()
+    {
+        if(Time.time - killUIStartTime < 1f)
+        {
+            Rect rect = new Rect(Screen.width / 2 - killUI.width / 2, 30, killUI.width, killUI.height);
+            GUI.DrawTexture(rect, killUI);
+        }
+    }
+
+    public void ComputerCtrl()
+    {
+        if (ctrlType != CtrlType.computer)
+            return;
+        Vector3 rot = ai.GetTurretTarget();
+        turretRotTarget = rot.y;
+        turretRollTarget = rot.x;
+        if (ai.IsShoot())
+        {
+            Shoot();
+        }
+
+        steering = ai.GetSteering();
+        motor = ai.GetMotor();
+        //Debug.Log(motor);
+        
+        if (motor < 0)
+            steering = -steering;
+        //Debug.Log(steering);
+        brakeTorque = ai.GetBrakeTorque();
+    }
+
+    public void NoneCtrl()
+    {
+        if (ctrlType != CtrlType.none)
+            return;
+        motor = 0;
+        steering = 0;
+        brakeTorque = maxBrakeTorque / 2;
     }
 }
